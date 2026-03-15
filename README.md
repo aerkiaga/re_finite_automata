@@ -21,4 +21,5 @@ with a focus on regex matches on byte arrays.
 cargo test
 cargo llvm-cov
 cargo mutants
+cargo bench
 ```
