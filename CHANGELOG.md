@@ -5,6 +5,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `from_range`, `append` and `invert` for creating `Dfa` objects.
+- `Dfa` benchmarks.
+- Several new tests.
+
+### Changed
+
+- Made `Nfa::run` about 3x faster.
+
 ## [0.1.0] - 2026-03-15
 
 ### Added

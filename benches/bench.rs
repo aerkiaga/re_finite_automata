@@ -36,11 +36,39 @@ pub fn bench_nfa_either_match(c: &mut Criterion) {
     });
 }
 
+pub fn bench_dfa_no_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let dfa = Dfa::from_range(1..=255);
+    c.bench_function("DFA no match", |b| {
+        b.iter(|| black_box(dfa.run(input.iter().copied())))
+    });
+}
+
+pub fn bench_dfa_char_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let dfa = Dfa::from_range(0..=0);
+    c.bench_function("DFA character match", |b| {
+        b.iter(|| black_box(dfa.run(input.iter().copied())))
+    });
+}
+
+pub fn bench_dfa_4_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let dfa = Dfa::from_range(0..=255);
+    let dfa = dfa.clone() + dfa.clone() + dfa.clone() + dfa;
+    c.bench_function("DFA 4 char match", |b| {
+        b.iter(|| black_box(dfa.run(input.iter().copied())))
+    });
+}
+
 criterion_group!(
     benches,
     bench_nfa_no_match,
     bench_nfa_char_match,
     bench_nfa_4_match,
-    bench_nfa_either_match
+    bench_nfa_either_match,
+    bench_dfa_no_match,
+    bench_dfa_char_match,
+    bench_dfa_4_match,
 );
 criterion_main!(benches);
