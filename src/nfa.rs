@@ -1,6 +1,19 @@
 use crate::*;
+use std::iter::Iterator;
+use std::ops::{Add, BitOr, Index, Not, RangeInclusive};
 
 /// A nondeterministic finite-state automaton.
+///
+/// ## Constructing
+/// - [Nfa::from_range]: NFA that matches a single symbol in a range.
+/// - [Nfa::append] (**+** *operator*): NFA that matches concatenation.
+/// - [Nfa::combine] (**|** *operator*): NFA that matches either of two.
+/// - [Nfa::invert] (**!** *operator*): NFA that matches the reverse.
+///
+/// ## Matching
+/// - [Nfa::run]: typical matching.
+/// - [Nfa::run_shortest]: gives shortest possible match.
+
 #[derive(Clone)]
 pub struct Nfa {
     // each transition contains states or indices into the state table
@@ -82,7 +95,12 @@ impl Nfa {
     }
 
     /// Runs the state machine on some input and returns whether the input is accepted.
-    pub fn run<I: Iterator<Item = u8>>(&self, input: I) -> bool {
+    /// Matches the shortest possible input, using breadth-first search.
+    ///
+    /// This function is about 6 times slower than [Nfa::run],
+    /// but guarantees the shortest possible match,
+    /// and may be faster for some inputs.
+    pub fn run_shortest<I: Iterator<Item = u8>>(&self, input: I) -> bool {
         let l = self.transitions.len() as u16;
         let mut states_a = BitSet::new_with_size(l);
         let mut states_b = BitSet::new_with_size(l);
@@ -113,6 +131,46 @@ impl Nfa {
             states_c.drain();
         }
         false
+    }
+
+    /// Runs the state machine on some input and returns whether the input is accepted.
+    /// Respects matching priorities, using depth-first search.
+    ///
+    /// This function is usually much faster than [Nfa::run_shortest].
+    pub fn run<I: Index<usize, Output = u8> + ?Sized>(&self, input: &I, length: usize) -> bool {
+        let mut index = 0;
+        let mut state = INITIAL_STATE;
+        let mut stack = vec![];
+        let mut symbol = 0;
+        loop {
+            if (!state) <= 1 {
+                if state == ACCEPTING_STATE {
+                    return true;
+                } else {
+                    (index, state, symbol) = match stack.pop() {
+                        Some(x) => x,
+                        None => return false,
+                    };
+                    continue;
+                }
+            }
+            if self.consumes(state) {
+                if index >= length {
+                    (index, state, symbol) = match stack.pop() {
+                        Some(x) => x,
+                        None => return false,
+                    };
+                    continue;
+                }
+                symbol = input[index];
+                index = index.wrapping_add(1);
+            }
+            let new_states = self.apply(state, symbol);
+            for n in (1..new_states.len()).rev() {
+                stack.push((index, new_states[n], symbol));
+            }
+            state = new_states[0];
+        }
     }
 
     /// Creates a new NFA that matches a single symbol within a range.
@@ -361,10 +419,14 @@ fn nfa_run_test() {
     assert_eq!(nfa.apply(2, 7), [3]);
     assert_eq!(nfa.translate_state(&0x8000), [1, 4]);
     assert_eq!(nfa.translate_state_mut(&mut 0x8000), [1, 4]);
-    assert!(nfa.run([5, 9].into_iter()));
-    assert!(nfa.run([7, 8].into_iter()));
-    assert!(!nfa.run([9, 7].into_iter()));
-    assert!(nfa.run([9, 15].into_iter()));
+    assert!(nfa.run_shortest([5, 9].into_iter()));
+    assert!(nfa.run(&[5, 9], 2));
+    assert!(nfa.run_shortest([7, 8].into_iter()));
+    assert!(nfa.run(&[7, 8], 2));
+    assert!(!nfa.run_shortest([9, 7].into_iter()));
+    assert!(!nfa.run(&[9, 7], 2));
+    assert!(nfa.run_shortest([9, 15].into_iter()));
+    assert!(nfa.run(&[9, 15], 2));
 }
 
 #[test]
@@ -372,9 +434,12 @@ fn nfa_add_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = nfa1 + nfa2;
-    assert!(nfa.run([4, 6].into_iter()));
-    assert!(!nfa.run([4, 5].into_iter()));
-    assert!(!nfa.run([6, 6].into_iter()));
+    assert!(nfa.run_shortest([4, 6].into_iter()));
+    assert!(!nfa.run_shortest([4, 5].into_iter()));
+    assert!(!nfa.run_shortest([6, 6].into_iter()));
+    assert!(nfa.run(&[4, 6], 2));
+    assert!(!nfa.run(&[4, 5], 2));
+    assert!(!nfa.run(&[6, 6], 2));
 }
 
 #[test]
@@ -382,9 +447,12 @@ fn nfa_not_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = !(nfa1 + nfa2);
-    assert!(!nfa.run([4, 6].into_iter()));
-    assert!(nfa.run([4, 5].into_iter()));
-    assert!(nfa.run([6, 6].into_iter()));
+    assert!(!nfa.run_shortest([4, 6].into_iter()));
+    assert!(nfa.run_shortest([4, 5].into_iter()));
+    assert!(nfa.run_shortest([6, 6].into_iter()));
+    assert!(!nfa.run(&[4, 6], 2));
+    assert!(nfa.run(&[4, 5], 2));
+    assert!(nfa.run(&[6, 6], 2));
 }
 
 #[test]
@@ -392,9 +460,12 @@ fn nfa_or_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = nfa1 | nfa2;
-    assert!(nfa.run([4].into_iter()));
-    assert!(nfa.run([6].into_iter()));
-    assert!(!nfa.run([7].into_iter()));
+    assert!(nfa.run_shortest([4].into_iter()));
+    assert!(nfa.run_shortest([6].into_iter()));
+    assert!(!nfa.run_shortest([7].into_iter()));
+    assert!(nfa.run(&[4], 1));
+    assert!(nfa.run(&[6], 1));
+    assert!(!nfa.run(&[7], 1));
 }
 
 #[test]
@@ -402,10 +473,16 @@ fn nfa_compound_test() {
     let nfa0 = Nfa::from_range(0..=0);
     let nfa1 = Nfa::from_range(1..=1);
     let nfa = ((nfa0.clone() | nfa1.clone()) + nfa0.clone() + nfa1.clone()) | (nfa0 + nfa1);
-    assert!(nfa.run([0, 0, 1].into_iter()));
-    assert!(nfa.run([0, 1].into_iter()));
-    assert!(nfa.run([1, 0, 1].into_iter()));
-    assert!(!nfa.run([1, 0, 0].into_iter()));
-    assert!(nfa.run([0, 1, 0].into_iter()));
-    assert!(!nfa.run([1, 0].into_iter()));
+    assert!(nfa.run_shortest([0, 0, 1].into_iter()));
+    assert!(nfa.run_shortest([0, 1].into_iter()));
+    assert!(nfa.run_shortest([1, 0, 1].into_iter()));
+    assert!(!nfa.run_shortest([1, 0, 0].into_iter()));
+    assert!(nfa.run_shortest([0, 1, 0].into_iter()));
+    assert!(!nfa.run_shortest([1, 0].into_iter()));
+    assert!(nfa.run(&[0, 0, 1], 3));
+    assert!(nfa.run(&[0, 1], 2));
+    assert!(nfa.run(&[1, 0, 1], 3));
+    assert!(!nfa.run(&[1, 0, 0], 3));
+    assert!(nfa.run(&[0, 1, 0], 3));
+    assert!(!nfa.run(&[1, 0], 2));
 }

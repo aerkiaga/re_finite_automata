@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A new depth-first `Nfa` run method.
 - `from_range`, `append` and `invert` for creating `Dfa` objects.
-- `Dfa` benchmarks.
-- Several new tests.
+- Several new tests and benchmarks.
 
 ### Changed
 
-- Made `Nfa::run` about 3x faster.
+- Renamed `Nfa::run` to `Nfa::run_shortest`.
+- Made `Nfa::run_shortest` about 3x faster.
 
 ## [0.1.0] - 2026-03-15
 

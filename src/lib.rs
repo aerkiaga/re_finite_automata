@@ -1,8 +1,5 @@
 #![feature(int_lowest_highest_one)]
 
-use std::iter::Iterator;
-use std::ops::{Add, BitOr, Not, RangeInclusive};
-
 /// The initial state for a finite-state automaton.
 pub const INITIAL_STATE: u16 = 0;
 

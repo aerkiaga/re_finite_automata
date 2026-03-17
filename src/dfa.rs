@@ -1,6 +1,17 @@
 use crate::*;
 
+use std::iter::Iterator;
+use std::ops::{Add, Not, RangeInclusive};
+
 /// A deterministic finite-state automaton.
+///
+/// ## Constructing
+/// - [Dfa::from_range]: DFA that matches a single symbol in a range.
+/// - [Dfa::append] (**+** *operator*): DFA that matches concatenation.
+/// - [Dfa::invert] (**!** *operator*): DFA that matches the reverse.
+///
+/// ## Matching
+/// - [Dfa::run]: matches input.
 #[derive(Clone)]
 pub struct Dfa {
     // each transition contains new states
