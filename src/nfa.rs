@@ -142,8 +142,8 @@ impl Nfa {
                             states_a.insert(*new_state);
                         }
                     }
+                    states_c.insert(state);
                 }
-                states_c.insert(state); // TODO: move one line up
             }
             std::mem::swap(&mut states_a, &mut states_b);
             states_c.drain();

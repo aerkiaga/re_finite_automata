@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A new depth-first `Nfa` run method.
+- A new depth-first `Nfa::run` method.
 - `from_range`, `append` and `invert` for creating `Dfa` objects.
 - `switch` for creating `Dfa` and `Nfa` objects.
 - `repeat_greedy` and `repeat_lazy` for creating `Nfa` objects.
