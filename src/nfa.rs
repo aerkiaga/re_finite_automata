@@ -10,6 +10,7 @@ use try_index::TryIndex;
 /// - [Nfa::append] (**+** *operator*): NFA that matches concatenation.
 /// - [Nfa::combine] (**|** *operator*): NFA that matches either of two.
 /// - [Nfa::invert] (**!** *operator*): NFA that matches the reverse.
+/// - [Dfa::switch]: applies either NFA depending on match status.
 ///
 /// ## Matching
 /// - [Nfa::run]: typical matching.
@@ -142,7 +143,7 @@ impl Nfa {
                         }
                     }
                 }
-                states_c.insert(state);
+                states_c.insert(state); // TODO: move one line up
             }
             std::mem::swap(&mut states_a, &mut states_b);
             states_c.drain();
@@ -289,6 +290,48 @@ impl Nfa {
                 *state = ACCEPTING_STATE;
             }
         }
+    }
+
+    /// Creates a new NFA that matches zero or more times, as many as possible.
+    // TODO: tests
+    pub fn repeat_greedy(&mut self) {
+        let mut r = Nfa {
+            transitions: vec![Transition {
+                min: 0,
+                max: 255,
+                inside: 0x8000,
+                outside: 0,
+                consume: false,
+            }],
+            states: vec![2, 1, ACCEPTING_STATE],
+        };
+        self.rebase_transition_states(1);
+        self.rebase_states_array(3);
+        self.replace_state(ACCEPTING_STATE, 0);
+        r.transitions.append(&mut self.transitions);
+        r.states.append(&mut self.states);
+        *self = r;
+    }
+
+    /// Creates a new NFA that matches zero or more times, as few as possible.
+    // TODO: tests
+    pub fn repeat_lazy(&mut self) {
+        let mut r = Nfa {
+            transitions: vec![Transition {
+                min: 0,
+                max: 255,
+                inside: 0x8000,
+                outside: 0,
+                consume: false,
+            }],
+            states: vec![2, ACCEPTING_STATE, 1],
+        };
+        self.rebase_transition_states(1);
+        self.rebase_states_array(3);
+        self.replace_state(ACCEPTING_STATE, 0);
+        r.transitions.append(&mut self.transitions);
+        r.states.append(&mut self.states);
+        *self = r;
     }
 
     /// Creates a new NFA that matches either depending on result of current NFA.
@@ -543,7 +586,7 @@ fn nfa_switch_test() {
 
 #[test]
 fn nfa_out_test() {
-    let mut nfa = Nfa::from_range(0..=0) + Nfa::from_range(0..=0);
+    let nfa = Nfa::from_range(0..=0) + Nfa::from_range(0..=0);
     assert!(!nfa.run_shortest(&mut [0].into_iter()));
     assert_eq!(nfa.run(&[0]), None);
 }
