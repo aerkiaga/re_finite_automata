@@ -1,5 +1,17 @@
 #![feature(int_lowest_highest_one)]
 
+//! A crate for constructing and simulating finite-state automata,
+//! with a focus on regex matches on byte arrays.
+//!
+//! This crate provides two types of finite automata:
+//! - **Deterministic FAs** ([Dfa]).
+//! - **Nondeterministic FAs** ([Nfa]).
+//!
+//! The methods implemented for each allow to:
+//! - Construct them using primitive composition.
+//! - Run them to check if an input matches.
+//! - Implement custom metching code on top of them.
+
 /// The initial state for a finite-state automaton.
 pub const INITIAL_STATE: u16 = 0;
 

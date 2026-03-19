@@ -346,6 +346,7 @@ name = "re_finite_automata"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "try_index",
 ]
 
 [[package]]
@@ -461,6 +462,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "try_index"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9252076c9c65a14c236081a59ff361fc05633bd72394594b67136fdd07f656f3"
 
 [[package]]
 name = "unicode-ident"

@@ -1,6 +1,7 @@
 use crate::*;
 use std::iter::Iterator;
-use std::ops::{Add, BitOr, Index, Not, RangeInclusive};
+use std::ops::{Add, BitOr, Not, RangeInclusive};
+use try_index::TryIndex;
 
 /// A nondeterministic finite-state automaton.
 ///
@@ -13,7 +14,22 @@ use std::ops::{Add, BitOr, Index, Not, RangeInclusive};
 /// ## Matching
 /// - [Nfa::run]: typical matching.
 /// - [Nfa::run_shortest]: gives shortest possible match.
-
+///
+/// ## Example
+/// ```rust
+/// use re_finite_automata::Nfa;
+///
+/// // we can construct a NFA using the provided methods
+/// // this matches regex `[\0-\5][\4]|[\3]`.
+/// let nfa = (Nfa::from_range(0..=5) + Nfa::from_range(4..=4)) | (Nfa::from_range(3..=3));
+/// let input = [3, 4, 5, 6];
+/// assert_eq!(nfa.run(&input), Some(2)); // first 2 bytes of input match
+///
+/// let mut iter = input.into_iter(); // any iterator over u8 will do
+/// assert!(nfa.run_shortest(&mut iter)); // input matches
+/// assert_eq!(iter.as_slice(), [4, 5, 6]); // we can get our match from the iterator
+/// // note that .run_shortest() returns the shortest match here
+/// ```
 #[derive(Clone)]
 pub struct Nfa {
     // each transition contains states or indices into the state table
@@ -100,13 +116,14 @@ impl Nfa {
     /// This function is about 6 times slower than [Nfa::run],
     /// but guarantees the shortest possible match,
     /// and may be faster for some inputs.
-    pub fn run_shortest<I: Iterator<Item = u8>>(&self, input: I) -> bool {
+    /// Match length may be extracted from the iterator.
+    pub fn run_shortest<I: Iterator<Item = u8>>(&self, input: &mut I) -> bool {
         let l = self.transitions.len() as u16;
         let mut states_a = BitSet::new_with_size(l);
         let mut states_b = BitSet::new_with_size(l);
         let mut states_c = BitSet::new_with_size(l);
         states_a.insert(INITIAL_STATE);
-        for symbol in input {
+        for symbol in input.by_ref() {
             if states_a.is_empty() {
                 return false;
             }
@@ -133,11 +150,12 @@ impl Nfa {
         false
     }
 
-    /// Runs the state machine on some input and returns whether the input is accepted.
+    /// Runs the state machine on some input and returns whether the input is accepted,
+    /// and if so the number of bytes parsed.
     /// Respects matching priorities, using depth-first search.
     ///
     /// This function is usually much faster than [Nfa::run_shortest].
-    pub fn run<I: Index<usize, Output = u8> + ?Sized>(&self, input: &I, length: usize) -> bool {
+    pub fn run<I: TryIndex<usize, Output = u8> + ?Sized>(&self, input: &I) -> Option<usize> {
         let mut index = 0;
         let mut state = INITIAL_STATE;
         let mut stack = vec![];
@@ -145,24 +163,20 @@ impl Nfa {
         loop {
             if (!state) <= 1 {
                 if state == ACCEPTING_STATE {
-                    return true;
+                    return Some(index);
                 } else {
-                    (index, state, symbol) = match stack.pop() {
-                        Some(x) => x,
-                        None => return false,
-                    };
+                    (index, state, symbol) = stack.pop()?;
                     continue;
                 }
             }
             if self.consumes(state) {
-                if index >= length {
-                    (index, state, symbol) = match stack.pop() {
-                        Some(x) => x,
-                        None => return false,
-                    };
-                    continue;
-                }
-                symbol = input[index];
+                symbol = match input.try_index(index) {
+                    Some(x) => *x,
+                    None => {
+                        (index, state, symbol) = stack.pop()?;
+                        continue;
+                    }
+                };
                 index = index.wrapping_add(1);
             }
             let new_states = self.apply(state, symbol);
@@ -275,6 +289,25 @@ impl Nfa {
                 *state = ACCEPTING_STATE;
             }
         }
+    }
+
+    /// Creates a new NFA that matches either depending on result of current NFA.
+    /// Will remove first consumed input from following NFAs.
+    pub fn switch(&mut self, mut accept: Self, mut reject: Self) {
+        let toffset = self.transitions.len() as u16;
+        let toffset2 = accept.transitions.len() as u16;
+        let soffset = self.states.len() as u16;
+        let soffset2 = accept.states.len() as u16;
+        self.replace_state(ACCEPTING_STATE, toffset);
+        self.replace_state(REJECTING_STATE, toffset + toffset2);
+        accept.transitions[0].consume = false;
+        reject.transitions[0].consume = false;
+        accept.rebase_transition_states(toffset);
+        reject.rebase_transition_states(toffset + toffset2);
+        accept.rebase_states_array(soffset);
+        reject.rebase_states_array(soffset + soffset2);
+        self.transitions.append(&mut accept.transitions);
+        self.transitions.append(&mut reject.transitions);
     }
 }
 
@@ -419,14 +452,15 @@ fn nfa_run_test() {
     assert_eq!(nfa.apply(2, 7), [3]);
     assert_eq!(nfa.translate_state(&0x8000), [1, 4]);
     assert_eq!(nfa.translate_state_mut(&mut 0x8000), [1, 4]);
-    assert!(nfa.run_shortest([5, 9].into_iter()));
-    assert!(nfa.run(&[5, 9], 2));
-    assert!(nfa.run_shortest([7, 8].into_iter()));
-    assert!(nfa.run(&[7, 8], 2));
-    assert!(!nfa.run_shortest([9, 7].into_iter()));
-    assert!(!nfa.run(&[9, 7], 2));
-    assert!(nfa.run_shortest([9, 15].into_iter()));
-    assert!(nfa.run(&[9, 15], 2));
+    assert_eq!(nfa.translate_state_mut(&mut 2), [2]);
+    assert!(nfa.run_shortest(&mut [5, 9].into_iter()));
+    assert_eq!(nfa.run(&[5, 9]), Some(1));
+    assert!(nfa.run_shortest(&mut [7, 8].into_iter()));
+    assert_eq!(nfa.run(&[7, 8]), Some(2));
+    assert!(!nfa.run_shortest(&mut [9, 7].into_iter()));
+    assert_eq!(nfa.run(&[9, 7]), None);
+    assert!(nfa.run_shortest(&mut [9, 15].into_iter()));
+    assert_eq!(nfa.run(&[9, 15]), Some(2));
 }
 
 #[test]
@@ -434,12 +468,12 @@ fn nfa_add_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = nfa1 + nfa2;
-    assert!(nfa.run_shortest([4, 6].into_iter()));
-    assert!(!nfa.run_shortest([4, 5].into_iter()));
-    assert!(!nfa.run_shortest([6, 6].into_iter()));
-    assert!(nfa.run(&[4, 6], 2));
-    assert!(!nfa.run(&[4, 5], 2));
-    assert!(!nfa.run(&[6, 6], 2));
+    assert!(nfa.run_shortest(&mut [4, 6].into_iter()));
+    assert!(!nfa.run_shortest(&mut [4, 5].into_iter()));
+    assert!(!nfa.run_shortest(&mut [6, 6].into_iter()));
+    assert!(nfa.run(&[4, 6]).is_some());
+    assert!(!nfa.run(&[4, 5]).is_some());
+    assert!(!nfa.run(&[6, 6]).is_some());
 }
 
 #[test]
@@ -447,12 +481,12 @@ fn nfa_not_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = !(nfa1 + nfa2);
-    assert!(!nfa.run_shortest([4, 6].into_iter()));
-    assert!(nfa.run_shortest([4, 5].into_iter()));
-    assert!(nfa.run_shortest([6, 6].into_iter()));
-    assert!(!nfa.run(&[4, 6], 2));
-    assert!(nfa.run(&[4, 5], 2));
-    assert!(nfa.run(&[6, 6], 2));
+    assert!(!nfa.run_shortest(&mut [4, 6].into_iter()));
+    assert!(nfa.run_shortest(&mut [4, 5].into_iter()));
+    assert!(nfa.run_shortest(&mut [6, 6].into_iter()));
+    assert!(!nfa.run(&[4, 6]).is_some());
+    assert!(nfa.run(&[4, 5]).is_some());
+    assert!(nfa.run(&[6, 6]).is_some());
 }
 
 #[test]
@@ -460,12 +494,12 @@ fn nfa_or_test() {
     let nfa1 = Nfa::from_range(4..=5);
     let nfa2 = Nfa::from_range(6..=6);
     let nfa = nfa1 | nfa2;
-    assert!(nfa.run_shortest([4].into_iter()));
-    assert!(nfa.run_shortest([6].into_iter()));
-    assert!(!nfa.run_shortest([7].into_iter()));
-    assert!(nfa.run(&[4], 1));
-    assert!(nfa.run(&[6], 1));
-    assert!(!nfa.run(&[7], 1));
+    assert!(nfa.run_shortest(&mut [4].into_iter()));
+    assert!(nfa.run_shortest(&mut [6].into_iter()));
+    assert!(!nfa.run_shortest(&mut [7].into_iter()));
+    assert!(nfa.run(&[4]).is_some());
+    assert!(nfa.run(&[6]).is_some());
+    assert!(!nfa.run(&[7]).is_some());
 }
 
 #[test]
@@ -473,16 +507,43 @@ fn nfa_compound_test() {
     let nfa0 = Nfa::from_range(0..=0);
     let nfa1 = Nfa::from_range(1..=1);
     let nfa = ((nfa0.clone() | nfa1.clone()) + nfa0.clone() + nfa1.clone()) | (nfa0 + nfa1);
-    assert!(nfa.run_shortest([0, 0, 1].into_iter()));
-    assert!(nfa.run_shortest([0, 1].into_iter()));
-    assert!(nfa.run_shortest([1, 0, 1].into_iter()));
-    assert!(!nfa.run_shortest([1, 0, 0].into_iter()));
-    assert!(nfa.run_shortest([0, 1, 0].into_iter()));
-    assert!(!nfa.run_shortest([1, 0].into_iter()));
-    assert!(nfa.run(&[0, 0, 1], 3));
-    assert!(nfa.run(&[0, 1], 2));
-    assert!(nfa.run(&[1, 0, 1], 3));
-    assert!(!nfa.run(&[1, 0, 0], 3));
-    assert!(nfa.run(&[0, 1, 0], 3));
-    assert!(!nfa.run(&[1, 0], 2));
+    assert!(nfa.run_shortest(&mut [0, 0, 1].into_iter()));
+    assert!(nfa.run_shortest(&mut [0, 1].into_iter()));
+    assert!(nfa.run_shortest(&mut [1, 0, 1].into_iter()));
+    assert!(!nfa.run_shortest(&mut [1, 0, 0].into_iter()));
+    assert!(nfa.run_shortest(&mut [0, 1, 0].into_iter()));
+    assert!(!nfa.run_shortest(&mut [1, 0].into_iter()));
+    assert!(nfa.run(&[0, 0, 1]).is_some());
+    assert!(nfa.run(&[0, 1]).is_some());
+    assert!(nfa.run(&[1, 0, 1]).is_some());
+    assert!(!nfa.run(&[1, 0, 0]).is_some());
+    assert!(nfa.run(&[0, 1, 0]).is_some());
+    assert!(!nfa.run(&[1, 0]).is_some());
+}
+
+#[test]
+fn nfa_switch_test() {
+    let mut nfa = Nfa::from_range(0..=1);
+    let nfa1 = Nfa::from_range(0..=0) + Nfa::from_range(2..=2);
+    let nfa2 = Nfa::from_range(2..=2) + Nfa::from_range(0..=0);
+    nfa.switch(nfa1, nfa2);
+    assert!(nfa.run_shortest(&mut [0, 2].into_iter()));
+    assert!(!nfa.run_shortest(&mut [0, 1].into_iter()));
+    assert!(!nfa.run_shortest(&mut [1].into_iter()));
+    assert!(nfa.run_shortest(&mut [2, 0].into_iter()));
+    assert!(!nfa.run_shortest(&mut [2, 1].into_iter()));
+    assert!(!nfa.run_shortest(&mut [3].into_iter()));
+    assert_eq!(nfa.run(&[0, 2]), Some(2));
+    assert_eq!(nfa.run(&[0, 1]), None);
+    assert_eq!(nfa.run(&[1]), None);
+    assert_eq!(nfa.run(&[2, 0]), Some(2));
+    assert_eq!(nfa.run(&[2, 1]), None);
+    assert_eq!(nfa.run(&[3]), None);
+}
+
+#[test]
+fn nfa_out_test() {
+    let mut nfa = Nfa::from_range(0..=0) + Nfa::from_range(0..=0);
+    assert!(!nfa.run_shortest(&mut [0].into_iter()));
+    assert_eq!(nfa.run(&[0]), None);
 }
