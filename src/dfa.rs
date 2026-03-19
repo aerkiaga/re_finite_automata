@@ -9,6 +9,7 @@ use std::ops::{Add, Not, RangeInclusive};
 /// - [Dfa::from_range]: DFA that matches a single symbol in a range.
 /// - [Dfa::append] (**+** *operator*): DFA that matches concatenation.
 /// - [Dfa::invert] (**!** *operator*): DFA that matches the reverse.
+/// - [Dfa::switch]: applies either DFA depending on match status.
 ///
 /// ## Matching
 /// - [Dfa::run]: matches input.
@@ -77,13 +78,19 @@ impl Dfa {
         let mut state = INITIAL_STATE;
         let mut symbol = 0;
         loop {
-            if self.consumes(state) {
+            let transition = &self.transitions[state as usize];
+            if transition.consume {
+                // TODO: avoid accessing transition twice
                 symbol = match input.next() {
                     Some(x) => x,
                     None => return false,
                 }
             }
-            state = self.apply(state, symbol);
+            state = if (transition.min..=transition.max).contains(&symbol) {
+                transition.inside
+            } else {
+                transition.outside
+            };
             if (!state) <= 1 {
                 return state == ACCEPTING_STATE;
             }
