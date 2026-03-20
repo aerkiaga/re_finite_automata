@@ -205,27 +205,23 @@ impl Dfa {
             let mut ranges: Vec<RangeInclusive<u8>> = vec![];
             let mut last_states: Vec<Option<BitSet>> = vec![];
             for symbol in 0..=255 {
-                let mut states_clone = states.clone(); // TODO: zero-copy
                 let next_states = Self::apply_nfa(&nfa, states.clone(), symbol);
                 let mut new = true;
-                if let Some(rg) = ranges.last() {
-                    if let Some(next) = last_states.last() {
-                        if *next == next_states {
-                            *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=symbol;
-                            new = false;
-                        }
-                    }
+                if ranges.last().is_some()
+                    && let Some(next) = last_states.last()
+                    && *next == next_states
+                {
+                    *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=symbol;
+                    new = false;
                 }
                 if new {
                     last_states.push(next_states.clone());
                     ranges.push(symbol..=symbol);
                     match next_states {
-                        Some(mut next) => {
-                            if !map.contains_key(&next) && !next.is_empty() {
-                                pending.push(next.clone());
-                            }
+                        Some(next) if !map.contains_key(&next) && !next.clone().is_empty() => {
+                            pending.push(next.clone());
                         }
-                        None => {}
+                        _ => {}
                     }
                 }
             }
@@ -237,7 +233,7 @@ impl Dfa {
         states.insert(INITIAL_STATE);
         starting.insert(states.clone(), cur_state);
         cur_state += std::cmp::max(map[&states].0.len() - 1, 1);
-        for (k, r) in map.iter() {
+        for (k, _) in map.iter() {
             if !starting.contains_key(k) {
                 starting.insert(k.clone(), cur_state);
                 cur_state += std::cmp::max(map[k].0.len() - 1, 1);
@@ -255,7 +251,7 @@ impl Dfa {
                         if states.clone().is_empty() {
                             REJECTING_STATE
                         } else {
-                            starting[&states] as u16
+                            starting[states] as u16
                         }
                     }
                     None => ACCEPTING_STATE,
@@ -278,17 +274,16 @@ impl Dfa {
                         if states.clone().is_empty() {
                             REJECTING_STATE
                         } else {
-                            starting[&states] as u16
+                            starting[states] as u16
                         }
                     }
                     None => ACCEPTING_STATE,
                 };
-                if r.0.len() == 3 {
-                    if trans[s - 2].as_ref().unwrap().inside
+                if r.0.len() == 3
+                    && trans[s - 2].as_ref().unwrap().inside
                         == trans[s - 1].as_ref().unwrap().outside
-                    {
-                        *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
-                    }
+                {
+                    *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
                 }
             }
             trans[starting[&k]].as_mut().unwrap().consume = true;
@@ -430,7 +425,7 @@ fn dfa_switch_test() {
 
 #[test]
 fn dfa_nfa_run_test() {
-    let mut nfa = Nfa {
+    let nfa = Nfa {
         transitions: vec![
             Transition {
                 min: 0,
