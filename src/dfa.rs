@@ -135,15 +135,16 @@ impl Dfa {
     }
 
     /// Creates a new NFA that matches the concatenation of two NFAs.
-    pub fn append(&mut self, mut other: Self) {
+    pub fn append(mut self, mut other: Self) -> Self {
         let toffset = self.transitions.len() as u16;
         self.replace_state(ACCEPTING_STATE, toffset);
         other.rebase_transition_states(toffset);
         self.transitions.append(&mut other.transitions);
+        self
     }
 
     /// Creates a new DFA with opposite matching behavior.
-    pub fn invert(&mut self) {
+    pub fn invert(mut self) -> Self {
         for state in self.iter_transitions() {
             if *state == ACCEPTING_STATE {
                 *state = REJECTING_STATE;
@@ -151,11 +152,12 @@ impl Dfa {
                 *state = ACCEPTING_STATE;
             }
         }
+        self
     }
 
     /// Creates a new DFA that matches either depending on result of current DFA.
     /// Will remove first consumed input from following DFAs.
-    pub fn switch(&mut self, mut accept: Self, mut reject: Self) {
+    pub fn switch(mut self, mut accept: Self, mut reject: Self) -> Self {
         let toffset = self.transitions.len() as u16;
         let toffset2 = accept.transitions.len() as u16;
         self.replace_state(ACCEPTING_STATE, toffset);
@@ -166,24 +168,23 @@ impl Dfa {
         reject.rebase_transition_states(toffset + toffset2);
         self.transitions.append(&mut accept.transitions);
         self.transitions.append(&mut reject.transitions);
+        self
     }
 }
 
 impl Add for Dfa {
     type Output = Self;
 
-    fn add(mut self, other: Self) -> Self::Output {
-        self.append(other);
-        self
+    fn add(self, other: Self) -> Self::Output {
+        self.append(other)
     }
 }
 
 impl Not for Dfa {
     type Output = Self;
 
-    fn not(mut self) -> Self::Output {
-        self.invert();
-        self
+    fn not(self) -> Self::Output {
+        self.invert()
     }
 }
 
@@ -288,10 +289,10 @@ fn dfa_compound_test() {
 
 #[test]
 fn dfa_switch_test() {
-    let mut dfa = Dfa::from_range(0..=1);
+    let dfa0 = Dfa::from_range(0..=1);
     let dfa1 = Dfa::from_range(0..=0) + Dfa::from_range(2..=2);
     let dfa2 = Dfa::from_range(2..=2) + Dfa::from_range(0..=0);
-    dfa.switch(dfa1, dfa2);
+    let dfa = dfa0.switch(dfa1, dfa2);
     assert!(dfa.run(&mut [0, 2].into_iter()));
     assert!(!dfa.run(&mut [0, 1].into_iter()));
     assert!(!dfa.run(&mut [1].into_iter()));

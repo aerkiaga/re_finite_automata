@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Made methods take mutable references to iterators instead of iterators.
-- Renamed `Nfa::run` to `Nfa::run_shortest` and added new `Nfa::run`.
+- **Breaking**: made composition methods take owned values instead of references.
+- **Breaking**: made run methods take mutable references to iterators instead of iterators.
+- **Breaking**: renamed `Nfa::run` to `Nfa::run_shortest` and added new `Nfa::run`.
 - Made `Nfa::run_shortest` about 3x faster.
 - Made `Dfa::run` about 25% faster.
 

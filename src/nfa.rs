@@ -244,7 +244,7 @@ impl Nfa {
     }
 
     /// Creates a new NFA that matches the concatenation of two NFAs.
-    pub fn append(&mut self, mut other: Self) {
+    pub fn append(mut self, mut other: Self) -> Self {
         let toffset = self.transitions.len() as u16;
         let soffset = self.states.len() as u16;
         self.replace_state(ACCEPTING_STATE, toffset);
@@ -252,10 +252,11 @@ impl Nfa {
         other.rebase_states_array(soffset);
         self.transitions.append(&mut other.transitions);
         self.states.append(&mut other.states);
+        self
     }
 
     /// Creates a new NFA that matches either of two NFAs.
-    pub fn combine(&mut self, mut other: Self) {
+    pub fn combine(mut self, mut other: Self) -> Self {
         let toffset = self.transitions.len() as u16;
         let soffset = self.states.len() as u16;
         let mut r = Nfa {
@@ -278,11 +279,11 @@ impl Nfa {
         r.states.append(&mut self.states);
         r.transitions.append(&mut other.transitions);
         r.states.append(&mut other.states);
-        *self = r;
+        r
     }
 
     /// Creates a new NFA with opposite matching behavior.
-    pub fn invert(&mut self) {
+    pub fn invert(mut self) -> Self {
         for state in self.iter_states() {
             if *state == ACCEPTING_STATE {
                 *state = REJECTING_STATE;
@@ -290,11 +291,11 @@ impl Nfa {
                 *state = ACCEPTING_STATE;
             }
         }
+        self
     }
 
     /// Creates a new NFA that matches zero or more times, as many as possible.
-    // TODO: tests
-    pub fn repeat_greedy(&mut self) {
+    pub fn repeat_greedy(mut self) -> Self {
         let mut r = Nfa {
             transitions: vec![Transition {
                 min: 0,
@@ -310,12 +311,11 @@ impl Nfa {
         self.replace_state(ACCEPTING_STATE, 0);
         r.transitions.append(&mut self.transitions);
         r.states.append(&mut self.states);
-        *self = r;
+        r
     }
 
     /// Creates a new NFA that matches zero or more times, as few as possible.
-    // TODO: tests
-    pub fn repeat_lazy(&mut self) {
+    pub fn repeat_lazy(mut self) -> Self {
         let mut r = Nfa {
             transitions: vec![Transition {
                 min: 0,
@@ -331,12 +331,12 @@ impl Nfa {
         self.replace_state(ACCEPTING_STATE, 0);
         r.transitions.append(&mut self.transitions);
         r.states.append(&mut self.states);
-        *self = r;
+        r
     }
 
     /// Creates a new NFA that matches either depending on result of current NFA.
     /// Will remove first consumed input from following NFAs.
-    pub fn switch(&mut self, mut accept: Self, mut reject: Self) {
+    pub fn switch(mut self, mut accept: Self, mut reject: Self) -> Self {
         let toffset = self.transitions.len() as u16;
         let toffset2 = accept.transitions.len() as u16;
         let soffset = self.states.len() as u16;
@@ -351,33 +351,31 @@ impl Nfa {
         reject.rebase_states_array(soffset + soffset2);
         self.transitions.append(&mut accept.transitions);
         self.transitions.append(&mut reject.transitions);
+        self
     }
 }
 
 impl Add for Nfa {
     type Output = Self;
 
-    fn add(mut self, other: Self) -> Self::Output {
-        self.append(other);
-        self
+    fn add(self, other: Self) -> Self::Output {
+        self.append(other)
     }
 }
 
 impl BitOr for Nfa {
     type Output = Self;
 
-    fn bitor(mut self, other: Self) -> Self::Output {
-        self.combine(other);
-        self
+    fn bitor(self, other: Self) -> Self::Output {
+        self.combine(other)
     }
 }
 
 impl Not for Nfa {
     type Output = Self;
 
-    fn not(mut self) -> Self::Output {
-        self.invert();
-        self
+    fn not(self) -> Self::Output {
+        self.invert()
     }
 }
 
@@ -566,10 +564,10 @@ fn nfa_compound_test() {
 
 #[test]
 fn nfa_switch_test() {
-    let mut nfa = Nfa::from_range(0..=1);
+    let nfa0 = Nfa::from_range(0..=1);
     let nfa1 = Nfa::from_range(0..=0) + Nfa::from_range(2..=2);
     let nfa2 = Nfa::from_range(2..=2) + Nfa::from_range(0..=0);
-    nfa.switch(nfa1, nfa2);
+    let nfa = nfa0.switch(nfa1, nfa2);
     assert!(nfa.run_shortest(&mut [0, 2].into_iter()));
     assert!(!nfa.run_shortest(&mut [0, 1].into_iter()));
     assert!(!nfa.run_shortest(&mut [1].into_iter()));
@@ -589,4 +587,26 @@ fn nfa_out_test() {
     let nfa = Nfa::from_range(0..=0) + Nfa::from_range(0..=0);
     assert!(!nfa.run_shortest(&mut [0].into_iter()));
     assert_eq!(nfa.run(&[0]), None);
+}
+
+#[test]
+fn repeat_greedy_test() {
+    let nfa0 = Nfa::from_range(0..=0);
+    let nfa1 = Nfa::from_range(1..=1);
+    let nfa = nfa0 + nfa1.clone().repeat_greedy() + nfa1;
+    assert_eq!(nfa.run(&[0, 1]), Some(2));
+    assert_eq!(nfa.run(&[0, 1, 1]), Some(3));
+    assert_eq!(nfa.run(&[0, 1, 0, 1]), Some(2));
+    assert_eq!(nfa.run(&[0, 0, 1]), None);
+}
+
+#[test]
+fn repeat_lazy_test() {
+    let nfa0 = Nfa::from_range(0..=0);
+    let nfa1 = Nfa::from_range(1..=1);
+    let nfa = nfa0 + nfa1.clone().repeat_lazy() + nfa1;
+    assert_eq!(nfa.run(&[0, 1]), Some(2));
+    assert_eq!(nfa.run(&[0, 1, 1]), Some(2));
+    assert_eq!(nfa.run(&[0, 1, 0, 1]), Some(2));
+    assert_eq!(nfa.run(&[0, 0, 1]), None);
 }
