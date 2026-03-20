@@ -246,6 +246,7 @@ impl Dfa {
         let mut trans: Vec<_> = (0..cur_state).map(|_| None).collect();
         for (k, r) in map.into_iter() {
             let mut s = starting[&k];
+            // TODO: handle more gracefully
             for n in 0..std::cmp::max(r.0.len() - 1, 1) {
                 let range = &r.0[n];
                 let inside_states = &r.1[n];
@@ -270,7 +271,6 @@ impl Dfa {
                 trans[s] = Some(t);
                 s = outside as usize;
             }
-            trans[starting[&k]].as_mut().unwrap().consume = true;
             if r.0.len() > 1 {
                 let inside_states = &r.1.last().unwrap();
                 trans[s - 1].as_mut().unwrap().outside = match inside_states {
@@ -283,7 +283,15 @@ impl Dfa {
                     }
                     None => ACCEPTING_STATE,
                 };
+                if r.0.len() == 3 {
+                    if trans[s - 2].as_ref().unwrap().inside
+                        == trans[s - 1].as_ref().unwrap().outside
+                    {
+                        *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
+                    }
+                }
             }
+            trans[starting[&k]].as_mut().unwrap().consume = true;
         }
         Dfa {
             transitions: trans.into_iter().map(|x| x.unwrap()).collect(),
