@@ -93,6 +93,44 @@ pub fn bench_dfa_4_match(c: &mut Criterion) {
     });
 }
 
+pub fn bench_dfa_nfa_no_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let nfa = Nfa::from_range(1..=255);
+    let dfa = Dfa::from_nfa(nfa);
+    c.bench_function("DFA from NFA no match", |b| {
+        b.iter(|| black_box(dfa.run(&mut input.iter().copied())))
+    });
+}
+
+pub fn bench_dfa_nfa_char_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let nfa = Nfa::from_range(0..=0);
+    let dfa = Dfa::from_nfa(nfa);
+    c.bench_function("DFA from NFA character match", |b| {
+        b.iter(|| black_box(dfa.run(&mut input.iter().copied())))
+    });
+}
+
+pub fn bench_dfa_nfa_4_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let nfa = Nfa::from_range(0..=255);
+    let nfa = nfa.clone() + nfa.clone() + nfa.clone() + nfa;
+    let dfa = Dfa::from_nfa(nfa);
+    c.bench_function("DFA from NFA 4 char match", |b| {
+        b.iter(|| black_box(dfa.run(&mut input.iter().copied())))
+    });
+}
+
+pub fn bench_dfa_nfa_either_match(c: &mut Criterion) {
+    let input: Vec<u8> = black_box((0..1000).map(|_| 0).collect());
+    let nfa = Nfa::from_range(0..=1);
+    let nfa = nfa.clone() | nfa;
+    let dfa = Dfa::from_nfa(nfa);
+    c.bench_function("DFA from NFA either match", |b| {
+        b.iter(|| black_box(dfa.run(&mut input.iter().copied())))
+    });
+}
+
 criterion_group!(
     benches,
     bench_nfa_shortest_no_match,
@@ -106,5 +144,9 @@ criterion_group!(
     bench_dfa_no_match,
     bench_dfa_char_match,
     bench_dfa_4_match,
+    bench_dfa_nfa_no_match,
+    bench_dfa_nfa_char_match,
+    bench_dfa_nfa_4_match,
+    bench_dfa_nfa_either_match,
 );
 criterion_main!(benches);
