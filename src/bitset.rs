@@ -1,7 +1,9 @@
+use smallvec::SmallVec;
+
 /// An optimized set of u16 using a bitmap.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub(crate) struct BitSet {
-    buckets: Vec<u64>,
+    buckets: SmallVec<[u64; 1]>,
     lowest: u16,
 }
 

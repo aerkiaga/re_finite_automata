@@ -175,7 +175,6 @@ impl Dfa {
     fn apply_nfa(nfa: &Nfa, mut states_a: BitSet, symbol: u8) -> Option<BitSet> {
         let mut states_b = states_a.clone();
         states_b.drain();
-        let mut states_c = states_a.clone();
         while let Some(state) = states_a.iter_next_remove() {
             let new_states = nfa.apply(state, symbol);
             for new_state in new_states {
@@ -187,7 +186,6 @@ impl Dfa {
                     states_b.insert(*new_state);
                 } else {
                     states_a.insert(*new_state);
-                    states_c.insert(*new_state);
                 }
             }
         }
