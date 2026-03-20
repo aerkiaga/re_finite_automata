@@ -34,9 +34,9 @@ use try_index::TryIndex;
 #[derive(Clone)]
 pub struct Nfa {
     // each transition contains states or indices into the state table
-    transitions: Vec<Transition>,
+    pub(crate) transitions: Vec<Transition>,
     // first element in each state list is size
-    states: Vec<u16>,
+    pub(crate) states: Vec<u16>,
 }
 
 impl Nfa {
@@ -590,7 +590,7 @@ fn nfa_out_test() {
 }
 
 #[test]
-fn repeat_greedy_test() {
+fn nfa_repeat_greedy_test() {
     let nfa0 = Nfa::from_range(0..=0);
     let nfa1 = Nfa::from_range(1..=1);
     let nfa = nfa0 + nfa1.clone().repeat_greedy() + nfa1;
@@ -601,7 +601,7 @@ fn repeat_greedy_test() {
 }
 
 #[test]
-fn repeat_lazy_test() {
+fn nfa_repeat_lazy_test() {
     let nfa0 = Nfa::from_range(0..=0);
     let nfa1 = Nfa::from_range(1..=1);
     let nfa = nfa0 + nfa1.clone().repeat_lazy() + nfa1;

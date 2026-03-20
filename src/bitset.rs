@@ -1,4 +1,5 @@
 /// An optimized set of u16 using a bitmap.
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub(crate) struct BitSet {
     buckets: Vec<u64>,
     lowest: u16,
