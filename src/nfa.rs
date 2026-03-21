@@ -193,16 +193,7 @@ impl Nfa {
 
     /// Creates a new NFA that matches a single symbol within a range.
     pub fn from_range(range: RangeInclusive<u8>) -> Self {
-        Nfa {
-            transitions: vec![Transition {
-                min: *range.start(),
-                max: *range.end(),
-                inside: ACCEPTING_STATE,
-                outside: REJECTING_STATE,
-                consume: true,
-            }],
-            states: vec![],
-        }
+        Nfa::from_dfa(Dfa::from_range(range))
     }
 
     fn iter_transitions(&mut self) -> NfaTransitionIterator<'_> {
