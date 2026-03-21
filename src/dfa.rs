@@ -8,6 +8,7 @@ use std::ops::{Add, Not, RangeInclusive};
 ///
 /// ## Constructing
 /// - [Dfa::from_range]: DFA that matches a single symbol in a range.
+/// - [Dfa::from_ranges]: DFA that matches a single symbol in any of a list of ranges.
 /// - [Dfa::append] (**+** *operator*): DFA that matches concatenation.
 /// - [Dfa::invert] (**!** *operator*): DFA that matches the reverse.
 /// - [Dfa::switch]: applies either DFA depending on match status.
@@ -217,6 +218,26 @@ impl Dfa {
         }
     }
 
+    // TODO: move into SwitchTable
+    fn fill_switch_table<T: Clone + std::cmp::Eq>(r: &mut SwitchTable<T>, def: &T) {
+        // fill spaces
+        let mut n = 0;
+        let mut last_start = 0;
+        while n < r.0.len() {
+            if *r.0[n].start() > last_start {
+                r.0.insert(n, last_start..=r.0[n].start() - 1);
+                r.1.insert(n, def.clone());
+                n += 1;
+            }
+            last_start = r.0[n].end() + 1;
+            n += 1;
+        }
+        if *r.0[n - 1].end() < 255 {
+            r.0.push(r.0[n - 1].end() + 1..=255);
+            r.1.push(def.clone());
+        }
+    }
+
     fn from_nfa_build_transitions_rec(
         trans: &mut [Option<Transition>],
         start: u16,
@@ -341,8 +362,36 @@ impl Dfa {
         for (k, r) in map2.into_iter() {
             Self::from_nfa_build_transitions(&mut trans, starting[&k], r);
         }
-        Dfa {
+        // TODO: compress transitions, removing None values
+        Self {
             transitions: trans
+                .into_iter()
+                .map(|x| {
+                    x.unwrap_or(Transition {
+                        min: 0,
+                        max: 255,
+                        inside: REJECTING_STATE,
+                        outside: REJECTING_STATE,
+                        consume: false,
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Similar to [Dfa::from_range], but matches any of a number of ranges.
+    pub fn from_ranges<I: Iterator<Item = RangeInclusive<u8>>>(ranges: &mut I) -> Self {
+        let ranges: Vec<_> = ranges.into_iter().collect();
+        let l = ranges.len();
+        let mut switch = (ranges, (0..l).map(|_| ACCEPTING_STATE).collect());
+        Self::fill_switch_table(&mut switch, &REJECTING_STATE);
+        Self::process_switch_table(&mut switch);
+        let l = (switch.0.len() - 1) as u16;
+        let mut transitions: Vec<_> = (0..l).map(|_| None).collect();
+        Self::from_nfa_build_transitions(&mut transitions, 0, switch);
+        // TODO: compress transitions, removing None values
+        Self {
+            transitions: transitions
                 .into_iter()
                 .map(|x| {
                     x.unwrap_or(Transition {
@@ -485,6 +534,16 @@ fn dfa_switch_test() {
     assert!(dfa.run(&mut [2, 0].into_iter()));
     assert!(!dfa.run(&mut [2, 1].into_iter()));
     assert!(!dfa.run(&mut [3].into_iter()));
+}
+
+#[test]
+fn dfa_ranges_test() {
+    let dfa = Dfa::from_ranges(&mut [2..=2, 4..=5].into_iter());
+    assert!(!dfa.run(&mut [0].into_iter()));
+    assert!(dfa.run(&mut [2].into_iter()));
+    assert!(!dfa.run(&mut [3].into_iter()));
+    assert!(dfa.run(&mut [4].into_iter()));
+    assert!(!dfa.run(&mut [6].into_iter()));
 }
 
 #[test]

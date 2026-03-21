@@ -9,6 +9,7 @@ use try_index::TryIndex;
 ///
 /// ## Constructing
 /// - [Nfa::from_range]: NFA that matches a single symbol in a range.
+/// - [Nfa::from_ranges]: NFA that matches a single symbol in any of a list of ranges.
 /// - [Nfa::append] (**+** *operator*): NFA that matches concatenation.
 /// - [Nfa::combine] (**|** *operator*): NFA that matches either of two.
 /// - [Nfa::invert] (**!** *operator*): NFA that matches the reverse.
@@ -435,6 +436,11 @@ impl Nfa {
         }
         map
     }
+
+    /// Similar to [Nfa::from_range], but matches any of a number of ranges.
+    pub fn from_ranges<I: Iterator<Item = RangeInclusive<u8>>>(ranges: &mut I) -> Self {
+        Nfa::from_dfa(Dfa::from_ranges(ranges))
+    }
 }
 
 impl Add for Nfa {
@@ -691,6 +697,16 @@ fn nfa_repeat_lazy_test() {
     assert_eq!(nfa.run(&[0, 1, 1]), Some(2));
     assert_eq!(nfa.run(&[0, 1, 0, 1]), Some(2));
     assert_eq!(nfa.run(&[0, 0, 1]), None);
+}
+
+#[test]
+fn nfa_ranges_test() {
+    let nfa = Nfa::from_ranges(&mut [2..=2, 4..=5].into_iter());
+    assert_eq!(nfa.run(&[0]), None);
+    assert_eq!(nfa.run(&[2]), Some(1));
+    assert_eq!(nfa.run(&[3]), None);
+    assert_eq!(nfa.run(&[4]), Some(1));
+    assert_eq!(nfa.run(&[6]), None);
 }
 
 #[test]
