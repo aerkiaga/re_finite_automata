@@ -253,6 +253,59 @@ impl Dfa {
         map
     }
 
+    fn from_nfa_build_transitions(
+        trans: &mut [Option<Transition>],
+        k: BitSet,
+        r: MapItem,
+        starting: &HashMap<BitSet, usize>,
+    ) {
+        let mut s = starting[&k];
+        // TODO: handle more gracefully
+        for n in 0..std::cmp::max(r.0.len() - 1, 1) {
+            let range = &r.0[n];
+            let inside_states = &r.1[n];
+            let inside = match inside_states {
+                Some(states) => {
+                    if states.clone().is_empty() {
+                        REJECTING_STATE
+                    } else {
+                        starting[states] as u16
+                    }
+                }
+                None => ACCEPTING_STATE,
+            };
+            let outside = (s + 1) as u16;
+            let t = Transition {
+                min: *range.start(),
+                max: *range.end(),
+                inside,
+                outside,
+                consume: false,
+            };
+            trans[s] = Some(t);
+            s = outside as usize;
+        }
+        if r.0.len() > 1 {
+            let inside_states = &r.1.last().unwrap();
+            trans[s - 1].as_mut().unwrap().outside = match inside_states {
+                Some(states) => {
+                    if states.clone().is_empty() {
+                        REJECTING_STATE
+                    } else {
+                        starting[states] as u16
+                    }
+                }
+                None => ACCEPTING_STATE,
+            };
+            if r.0.len() == 3
+                && trans[s - 2].as_ref().unwrap().inside == trans[s - 1].as_ref().unwrap().outside
+            {
+                *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
+            }
+        }
+        trans[starting[&k]].as_mut().unwrap().consume = true;
+    }
+
     pub fn from_nfa(nfa: Nfa) -> Self {
         let l = nfa.transitions.len() as u16;
         let map = Self::from_nfa_compute_map(nfa);
@@ -270,52 +323,7 @@ impl Dfa {
         }
         let mut trans: Vec<_> = (0..cur_state).map(|_| None).collect();
         for (k, r) in map.into_iter() {
-            let mut s = starting[&k];
-            // TODO: handle more gracefully
-            for n in 0..std::cmp::max(r.0.len() - 1, 1) {
-                let range = &r.0[n];
-                let inside_states = &r.1[n];
-                let inside = match inside_states {
-                    Some(states) => {
-                        if states.clone().is_empty() {
-                            REJECTING_STATE
-                        } else {
-                            starting[states] as u16
-                        }
-                    }
-                    None => ACCEPTING_STATE,
-                };
-                let outside = (s + 1) as u16;
-                let t = Transition {
-                    min: *range.start(),
-                    max: *range.end(),
-                    inside,
-                    outside,
-                    consume: false,
-                };
-                trans[s] = Some(t);
-                s = outside as usize;
-            }
-            if r.0.len() > 1 {
-                let inside_states = &r.1.last().unwrap();
-                trans[s - 1].as_mut().unwrap().outside = match inside_states {
-                    Some(states) => {
-                        if states.clone().is_empty() {
-                            REJECTING_STATE
-                        } else {
-                            starting[states] as u16
-                        }
-                    }
-                    None => ACCEPTING_STATE,
-                };
-                if r.0.len() == 3
-                    && trans[s - 2].as_ref().unwrap().inside
-                        == trans[s - 1].as_ref().unwrap().outside
-                {
-                    *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
-                }
-            }
-            trans[starting[&k]].as_mut().unwrap().consume = true;
+            Self::from_nfa_build_transitions(&mut trans, k, r, &starting);
         }
         Dfa {
             transitions: trans.into_iter().map(|x| x.unwrap()).collect(),
@@ -546,4 +554,50 @@ fn dfa_nfa_compound_test() {
     assert!(!dfa.run(&mut [1, 0, 0].into_iter()));
     assert!(dfa.run(&mut [0, 1, 0].into_iter()));
     assert!(!dfa.run(&mut [1, 0].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_switch_test() {
+    let nfa0 = Nfa::from_range(0..=1);
+    let nfa1 = Nfa::from_range(0..=0) + Nfa::from_range(2..=2);
+    let nfa2 = Nfa::from_range(2..=2) + Nfa::from_range(0..=0);
+    let nfa = nfa0.switch(nfa1, nfa2);
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(dfa.run(&mut [0, 2].into_iter()));
+    assert!(!dfa.run(&mut [0, 1].into_iter()));
+    assert!(!dfa.run(&mut [1].into_iter()));
+    assert!(dfa.run(&mut [2, 0].into_iter()));
+    assert!(!dfa.run(&mut [2, 1].into_iter()));
+    assert!(!dfa.run(&mut [3].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_out_test() {
+    let nfa = Nfa::from_range(0..=0) + Nfa::from_range(0..=0);
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(!dfa.run(&mut [0].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_repeat_greedy_test() {
+    let nfa0 = Nfa::from_range(0..=0);
+    let nfa1 = Nfa::from_range(1..=1);
+    let nfa = nfa0 + nfa1.clone().repeat_greedy() + nfa1;
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(dfa.run(&mut [0, 1].into_iter()));
+    assert!(dfa.run(&mut [0, 1, 1].into_iter()));
+    assert!(dfa.run(&mut [0, 1, 0, 1].into_iter()));
+    assert!(!dfa.run(&mut [0, 0, 1].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_repeat_lazy_test() {
+    let nfa0 = Nfa::from_range(0..=0);
+    let nfa1 = Nfa::from_range(1..=1);
+    let nfa = nfa0 + nfa1.clone().repeat_greedy() + nfa1;
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(dfa.run(&mut [0, 1].into_iter()));
+    assert!(dfa.run(&mut [0, 1, 1].into_iter()));
+    assert!(dfa.run(&mut [0, 1, 0, 1].into_iter()));
+    assert!(!dfa.run(&mut [0, 0, 1].into_iter()));
 }
