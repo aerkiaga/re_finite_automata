@@ -175,42 +175,122 @@ impl Dfa {
         self
     }
 
+    // TODO: move into SwitchTable
+    fn process_switch_table<T: std::cmp::Eq>(r: &mut SwitchTable<T>) {
+        // fill spaces
+        for n in 0..=r.0.len() {
+            let below = match n {
+                0 => 0,
+                _ => {
+                    if *r.0[n - 1].end() == 255 {
+                        continue;
+                    } else {
+                        r.0[n - 1].end() + 1
+                    }
+                }
+            };
+            let above = if n == r.0.len() {
+                255
+            } else if *r.0[n].start() == 0 {
+                continue;
+            } else {
+                r.0[n].start() - 1
+            };
+            if below <= above {
+                if n == r.0.len() {
+                    r.0[n - 1] = *r.0[n - 1].start()..=255;
+                } else {
+                    r.0[n] = below..=*r.0[n].end();
+                }
+            }
+        }
+        // merge equal entries
+        let mut n = 0;
+        while n < r.0.len() - 1 {
+            if r.1[n] == r.1[n + 1] {
+                r.0[n] = *r.0[n].start()..=*r.0[n + 1].end();
+                r.0.remove(n + 1);
+                r.1.remove(n + 1);
+            } else {
+                n += 1;
+            }
+        }
+    }
+
+    fn from_nfa_build_transitions_rec(
+        trans: &mut [Option<Transition>],
+        start: u16,
+        mut r: SwitchTable<u16>,
+    ) -> Option<u16> {
+        Self::process_switch_table(&mut r);
+        let l = r.0.len();
+        if l == 1 {
+            return Some(r.1[0]);
+        }
+        let mut best_range = 0..l;
+        // try to find a range that leaves the same item on both sides
+        for start in 1..=1 {
+            for end in l / 2..=std::cmp::min(l / 2 + 1, l - 1) {
+                if r.1[start - 1] == r.1[end] && end > start {
+                    best_range = start..end;
+                }
+            }
+        }
+        // otherwise just choose anything
+        if best_range == (0..l) {
+            best_range = 0..l / 2;
+        }
+        // create switch tables
+        let mut switch_inside = (vec![], vec![]);
+        let mut switch_outside = (vec![], vec![]);
+        for n in 0..l {
+            if best_range.contains(&n) {
+                switch_inside.0.push(r.0[n].clone());
+                switch_inside.1.push(r.1[n]);
+            } else {
+                switch_outside.0.push(r.0[n].clone());
+                switch_outside.1.push(r.1[n]);
+            }
+        }
+        // estimate starting positions
+        let inside = start + 1;
+        let outside = start + switch_inside.0.len() as u16;
+        // create transition
+        let range = r.0[best_range.start].start()..=r.0[best_range.end - 1].end();
+        let mut t = Transition {
+            min: **range.start(),
+            max: **range.end(),
+            inside,
+            outside,
+            consume: false,
+        };
+        // call recursively
+        if let Some(x) = Self::from_nfa_build_transitions_rec(trans, inside, switch_inside) {
+            t.inside = x;
+        }
+        if let Some(x) = Self::from_nfa_build_transitions_rec(trans, outside, switch_outside) {
+            t.outside = x;
+        }
+        trans[start as usize] = Some(t);
+        None
+    }
+
     fn from_nfa_build_transitions(
         trans: &mut [Option<Transition>],
         start: u16,
         r: SwitchTable<u16>,
     ) {
-        let mut s = start;
-        // TODO: handle more gracefully
-        for n in 0..std::cmp::max(r.0.len() - 1, 1) {
-            let range = &r.0[n];
-            let inside = r.1[n];
-            let outside = s + 1;
-            let t = Transition {
-                min: *range.start(),
-                max: *range.end(),
-                inside,
-                outside,
-                consume: false,
-            };
-            trans[s as usize] = Some(t);
-            s = outside;
+        if let Some(x) = Self::from_nfa_build_transitions_rec(trans, start, r) {
+            trans[start as usize] = Some(Transition {
+                min: 0,
+                max: 255,
+                inside: x,
+                outside: REJECTING_STATE,
+                consume: true,
+            });
+        } else {
+            trans[start as usize].as_mut().unwrap().consume = true;
         }
-        if r.0.len() > 1 {
-            let inside = &r.1.last();
-            trans[(s - 1) as usize].as_mut().unwrap().outside = match inside {
-                Some(state) => **state,
-                None => ACCEPTING_STATE,
-            };
-            if r.0.len() == 3
-                && trans[(s - 2) as usize].as_ref().unwrap().inside
-                    == trans[(s - 1) as usize].as_ref().unwrap().outside
-            {
-                *trans[(s - 2) as usize].as_mut().unwrap() =
-                    trans[(s - 1) as usize].as_ref().unwrap().clone();
-            }
-        }
-        trans[start as usize].as_mut().unwrap().consume = true;
     }
 
     /// Constructs a DFA from a NFA, using the [powerset construction](https://en.wikipedia.org/wiki/Powerset_construction).
@@ -221,7 +301,7 @@ impl Dfa {
     /// and up to twice as fast as [Nfa::run].
     ///
     /// For typical NFAs, the overhead of performing the conversion
-    /// with this function is worth it beyond several hundreds of bytes of input.
+    /// with this function is worth it beyond some hundreds of bytes of input.
     /// However, specifically crafted NFAs can yield an exponential worst-case
     /// running time for the conversion.
     pub fn from_nfa(nfa: Nfa) -> Self {
@@ -262,7 +342,18 @@ impl Dfa {
             Self::from_nfa_build_transitions(&mut trans, starting[&k], r);
         }
         Dfa {
-            transitions: trans.into_iter().map(|x| x.unwrap()).collect(),
+            transitions: trans
+                .into_iter()
+                .map(|x| {
+                    x.unwrap_or(Transition {
+                        min: 0,
+                        max: 255,
+                        inside: REJECTING_STATE,
+                        outside: REJECTING_STATE,
+                        consume: false,
+                    })
+                })
+                .collect(),
         }
     }
 }
