@@ -8,11 +8,11 @@ with a focus on regex matches on byte arrays.
 - Deterministic (DFA) and nondeterministic (NFA) finite-state automata.
 - Generic matching implementations as well as methods for implementing custom ones.
 - Primitive operators for constructing DFAs and NFAs.
+- Conversion of NFAs into DFAs and vice versa.
 
 ## ToDo
 
 - More primitive operators.
-- Conversion of NFAs into DFAs.
 - DFA optimization.
 
 ## Testing
