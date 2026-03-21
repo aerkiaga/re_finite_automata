@@ -11,6 +11,7 @@ use std::ops::{Add, Not, RangeInclusive};
 /// - [Dfa::append] (**+** *operator*): DFA that matches concatenation.
 /// - [Dfa::invert] (**!** *operator*): DFA that matches the reverse.
 /// - [Dfa::switch]: applies either DFA depending on match status.
+/// - [Dfa::from_nfa]: converts a NFA into a DFA.
 ///
 /// ## Matching
 /// - [Dfa::run]: matches input.
@@ -174,6 +175,7 @@ impl Dfa {
         self
     }
 
+    // TODO: move to module nfa
     fn apply_nfa(
         nfa: &Nfa,
         mut states_a: BitSet,
@@ -208,6 +210,7 @@ impl Dfa {
         (Some(states_b), max)
     }
 
+    // TODO: move to module nfa
     fn from_nfa_compute_map(nfa: Nfa) -> HashMap<BitSet, MapItem> {
         let l = nfa.transitions.len() as u16;
         let mut map = HashMap::new();
@@ -306,8 +309,20 @@ impl Dfa {
         trans[starting[&k]].as_mut().unwrap().consume = true;
     }
 
+    /// Constructs a DFA from a NFA, using the [powerset construction](https://en.wikipedia.org/wiki/Powerset_construction).
+    ///
+    /// The resulting DFA will behave like [Nfa::run_shortest]
+    /// in that it yields the shortest possible match for any input.
+    /// However, it is approximately 10 times faster,
+    /// and up to twice as fast as [Nfa::run].
+    ///
+    /// For typical NFAs, the overhead of performing the conversion
+    /// with this function is worth it beyond several hundreds of bytes of input.
+    /// However, specifically crafted NFAs can yield an exponential worst-case
+    /// running time for the conversion.
     pub fn from_nfa(nfa: Nfa) -> Self {
         let l = nfa.transitions.len() as u16;
+        // Compute a map of state sets to lists of branches
         let map = Self::from_nfa_compute_map(nfa);
         let mut starting = HashMap::new();
         let mut cur_state = 0;
@@ -315,6 +330,7 @@ impl Dfa {
         states.insert(INITIAL_STATE);
         starting.insert(states.clone(), cur_state);
         cur_state += std::cmp::max(map[&states].0.len() - 1, 1);
+        // Associate each state set to a state number
         for (k, _) in map.iter() {
             if !starting.contains_key(k) {
                 starting.insert(k.clone(), cur_state);
@@ -322,6 +338,7 @@ impl Dfa {
             }
         }
         let mut trans: Vec<_> = (0..cur_state).map(|_| None).collect();
+        // Build transitions
         for (k, r) in map.into_iter() {
             Self::from_nfa_build_transitions(&mut trans, k, r, &starting);
         }
