@@ -33,6 +33,8 @@ pub struct Dfa {
     pub(crate) transitions: Vec<Transition>,
 }
 
+type MapItem = (Vec<RangeInclusive<u8>>, Vec<Option<BitSet>>);
+
 impl Dfa {
     /// Returns the number of states.
     pub fn size(&self) -> u16 {
@@ -177,14 +179,24 @@ impl Dfa {
         mut states_a: BitSet,
         mut states_b: BitSet,
         symbol: u8,
-    ) -> Option<BitSet> {
+    ) -> (Option<BitSet>, u8) {
+        let mut max = 255;
         states_b.drain();
         while let Some(state) = states_a.iter_next_remove() {
-            let new_states = nfa.apply(state, symbol);
+            let trans = &nfa.transitions[state as usize];
+            let new_states = if symbol < trans.min {
+                max = std::cmp::min(max, trans.min - 1);
+                nfa.translate_state(&trans.outside)
+            } else if symbol > trans.max {
+                nfa.translate_state(&trans.outside)
+            } else {
+                max = std::cmp::min(max, trans.max);
+                nfa.translate_state(&trans.inside)
+            };
             for new_state in new_states {
                 if (!new_state) <= 1 {
                     if *new_state == ACCEPTING_STATE {
-                        return None;
+                        return (None, max);
                     }
                 } else if nfa.consumes(*new_state) {
                     states_b.insert(*new_state);
@@ -193,12 +205,10 @@ impl Dfa {
                 }
             }
         }
-        Some(states_b)
+        (Some(states_b), max)
     }
 
-    fn from_nfa_compute_map(
-        nfa: Nfa,
-    ) -> HashMap<BitSet, (Vec<RangeInclusive<u8>>, Vec<Option<BitSet>>)> {
+    fn from_nfa_compute_map(nfa: Nfa) -> HashMap<BitSet, MapItem> {
         let l = nfa.transitions.len() as u16;
         let mut map = HashMap::new();
         let mut pending = vec![];
@@ -209,19 +219,20 @@ impl Dfa {
             let mut ranges: Vec<RangeInclusive<u8>> = vec![];
             let mut last_states: Vec<Option<BitSet>> = vec![];
             let mut states_b = BitSet::new_with_size(l);
-            for symbol in 0..=255 {
-                let next_states = Self::apply_nfa(&nfa, states.clone(), states_b, symbol);
+            let mut symbol = 0;
+            loop {
+                let (next_states, max) = Self::apply_nfa(&nfa, states.clone(), states_b, symbol);
                 let mut new = true;
                 if ranges.last().is_some()
                     && let Some(next) = last_states.last()
                     && *next == next_states
                 {
-                    *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=symbol;
+                    *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=max;
                     new = false;
                 }
                 if new {
                     last_states.push(next_states.clone());
-                    ranges.push(symbol..=symbol);
+                    ranges.push(symbol..=max);
                     match next_states {
                         Some(next) if !map.contains_key(&next) && !next.clone().is_empty() => {
                             pending.push(next.clone());
@@ -232,6 +243,10 @@ impl Dfa {
                 } else {
                     states_b = next_states.unwrap_or_else(|| BitSet::new_with_size(l));
                 }
+                if max == 255 {
+                    break;
+                }
+                symbol = max + 1;
             }
             map.insert(states.clone(), (ranges, last_states));
         }

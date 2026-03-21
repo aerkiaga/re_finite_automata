@@ -53,7 +53,7 @@ impl Nfa {
     }
 
     /// Given a raw next state value, produce a list of next states.
-    fn translate_state<'a>(&'a self, state: &'a u16) -> &'a [u16] {
+    pub(crate) fn translate_state<'a>(&'a self, state: &'a u16) -> &'a [u16] {
         if !state <= 1 {
             return std::slice::from_ref(state);
         }
