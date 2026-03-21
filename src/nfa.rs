@@ -10,7 +10,8 @@ use try_index::TryIndex;
 /// - [Nfa::append] (**+** *operator*): NFA that matches concatenation.
 /// - [Nfa::combine] (**|** *operator*): NFA that matches either of two.
 /// - [Nfa::invert] (**!** *operator*): NFA that matches the reverse.
-/// - [Dfa::switch]: applies either NFA depending on match status.
+/// - [Nfa::switch]: applies either NFA depending on match status.
+/// - [Nfa::from_dfa]: converts a DFA into a NFA.
 ///
 /// ## Matching
 /// - [Nfa::run]: typical matching.
@@ -353,6 +354,15 @@ impl Nfa {
         self.transitions.append(&mut reject.transitions);
         self
     }
+
+    /// Converts a DFA into a NFA. This operation is constant-time and fast,
+    /// unlike the opposite conversion (see [Dfa::from_nfa]).
+    pub fn from_dfa(dfa: Dfa) -> Self {
+        Self {
+            transitions: dfa.transitions,
+            states: vec![],
+        }
+    }
 }
 
 impl Add for Nfa {
@@ -609,4 +619,32 @@ fn nfa_repeat_lazy_test() {
     assert_eq!(nfa.run(&[0, 1, 1]), Some(2));
     assert_eq!(nfa.run(&[0, 1, 0, 1]), Some(2));
     assert_eq!(nfa.run(&[0, 0, 1]), None);
+}
+
+#[test]
+fn nfa_dfa_add_test() {
+    let dfa1 = Dfa::from_range(4..=5);
+    let dfa2 = Dfa::from_range(6..=6);
+    let dfa = dfa1 + dfa2;
+    let nfa = Nfa::from_dfa(dfa);
+    assert!(nfa.run_shortest(&mut [4, 6].into_iter()));
+    assert!(!nfa.run_shortest(&mut [4, 5].into_iter()));
+    assert!(!nfa.run_shortest(&mut [6, 6].into_iter()));
+    assert!(nfa.run(&[4, 6]).is_some());
+    assert!(!nfa.run(&[4, 5]).is_some());
+    assert!(!nfa.run(&[6, 6]).is_some());
+}
+
+#[test]
+fn nfa_dfa_not_test() {
+    let dfa1 = Dfa::from_range(4..=5);
+    let dfa2 = Dfa::from_range(6..=6);
+    let dfa = !(dfa1 + dfa2);
+    let nfa = Nfa::from_dfa(dfa);
+    assert!(!nfa.run_shortest(&mut [4, 6].into_iter()));
+    assert!(nfa.run_shortest(&mut [4, 5].into_iter()));
+    assert!(nfa.run_shortest(&mut [6, 6].into_iter()));
+    assert!(!nfa.run(&[4, 6]).is_some());
+    assert!(nfa.run(&[4, 5]).is_some());
+    assert!(nfa.run(&[6, 6]).is_some());
 }

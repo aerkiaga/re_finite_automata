@@ -11,6 +11,7 @@
 //! - Construct them using primitive composition.
 //! - Run them to check if an input matches.
 //! - Implement custom matching code on top of them.
+//! - Convert either type of FA into the other.
 
 /// The initial state for a finite-state automaton.
 pub const INITIAL_STATE: u16 = 0;
