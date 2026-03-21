@@ -34,7 +34,7 @@ pub struct Dfa {
     pub(crate) transitions: Vec<Transition>,
 }
 
-type SwitchTable<T> = (Vec<RangeInclusive<u8>>, Vec<T>);
+pub(crate) type SwitchTable<T> = (Vec<RangeInclusive<u8>>, Vec<T>);
 
 impl Dfa {
     /// Returns the number of states.
@@ -175,87 +175,6 @@ impl Dfa {
         self
     }
 
-    // TODO: move to module nfa
-    fn apply_nfa(
-        nfa: &Nfa,
-        mut states_a: BitSet,
-        mut states_b: BitSet,
-        symbol: u8,
-    ) -> (Option<BitSet>, u8) {
-        let mut max = 255;
-        states_b.drain();
-        while let Some(state) = states_a.iter_next_remove() {
-            let trans = &nfa.transitions[state as usize];
-            let new_states = if symbol < trans.min {
-                max = std::cmp::min(max, trans.min - 1);
-                nfa.translate_state(&trans.outside)
-            } else if symbol > trans.max {
-                nfa.translate_state(&trans.outside)
-            } else {
-                max = std::cmp::min(max, trans.max);
-                nfa.translate_state(&trans.inside)
-            };
-            for new_state in new_states {
-                if (!new_state) <= 1 {
-                    if *new_state == ACCEPTING_STATE {
-                        return (None, max);
-                    }
-                } else if nfa.consumes(*new_state) {
-                    states_b.insert(*new_state);
-                } else {
-                    states_a.insert(*new_state);
-                }
-            }
-        }
-        (Some(states_b), max)
-    }
-
-    // TODO: move to module nfa
-    fn from_nfa_compute_map(nfa: Nfa) -> HashMap<BitSet, SwitchTable<Option<BitSet>>> {
-        let l = nfa.transitions.len() as u16;
-        let mut map = HashMap::new();
-        let mut pending = vec![];
-        let mut states = BitSet::new_with_size(l);
-        states.insert(INITIAL_STATE);
-        pending.push(states);
-        while let Some(states) = pending.pop() {
-            let mut ranges: Vec<RangeInclusive<u8>> = vec![];
-            let mut last_states: Vec<Option<BitSet>> = vec![];
-            let mut states_b = BitSet::new_with_size(l);
-            let mut symbol = 0;
-            loop {
-                let (next_states, max) = Self::apply_nfa(&nfa, states.clone(), states_b, symbol);
-                let mut new = true;
-                if ranges.last().is_some()
-                    && let Some(next) = last_states.last()
-                    && *next == next_states
-                {
-                    *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=max;
-                    new = false;
-                }
-                if new {
-                    last_states.push(next_states.clone());
-                    ranges.push(symbol..=max);
-                    match next_states {
-                        Some(next) if !map.contains_key(&next) && !next.clone().is_empty() => {
-                            pending.push(next.clone());
-                        }
-                        _ => {}
-                    }
-                    states_b = BitSet::new_with_size(l);
-                } else {
-                    states_b = next_states.unwrap_or_else(|| BitSet::new_with_size(l));
-                }
-                if max == 255 {
-                    break;
-                }
-                symbol = max + 1;
-            }
-            map.insert(states.clone(), (ranges, last_states));
-        }
-        map
-    }
-
     fn from_nfa_build_transitions(
         trans: &mut [Option<Transition>],
         start: u16,
@@ -308,7 +227,7 @@ impl Dfa {
     pub fn from_nfa(nfa: Nfa) -> Self {
         let l = nfa.transitions.len() as u16;
         // Compute a map of state sets to lists of branches
-        let map = Self::from_nfa_compute_map(nfa);
+        let map = nfa.compute_powerset_map();
         let mut starting = HashMap::new();
         let mut cur_state = 0;
         let mut states = BitSet::new_with_size(l);

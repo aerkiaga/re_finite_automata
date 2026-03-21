@@ -1,4 +1,6 @@
+use crate::dfa::SwitchTable;
 use crate::*;
+use std::collections::HashMap;
 use std::iter::Iterator;
 use std::ops::{Add, BitOr, Not, RangeInclusive};
 use try_index::TryIndex;
@@ -362,6 +364,85 @@ impl Nfa {
             transitions: dfa.transitions,
             states: vec![],
         }
+    }
+
+    pub(crate) fn explore_transitions(
+        &self,
+        mut states_a: BitSet,
+        mut states_b: BitSet,
+        symbol: u8,
+    ) -> (Option<BitSet>, u8) {
+        let mut max = 255;
+        states_b.drain();
+        while let Some(state) = states_a.iter_next_remove() {
+            let trans = &self.transitions[state as usize];
+            let new_states = if symbol < trans.min {
+                max = std::cmp::min(max, trans.min - 1);
+                self.translate_state(&trans.outside)
+            } else if symbol > trans.max {
+                self.translate_state(&trans.outside)
+            } else {
+                max = std::cmp::min(max, trans.max);
+                self.translate_state(&trans.inside)
+            };
+            for new_state in new_states {
+                if (!new_state) <= 1 {
+                    if *new_state == ACCEPTING_STATE {
+                        return (None, max);
+                    }
+                } else if self.consumes(*new_state) {
+                    states_b.insert(*new_state);
+                } else {
+                    states_a.insert(*new_state);
+                }
+            }
+        }
+        (Some(states_b), max)
+    }
+
+    pub(crate) fn compute_powerset_map(&self) -> HashMap<BitSet, SwitchTable<Option<BitSet>>> {
+        let l = self.transitions.len() as u16;
+        let mut map = HashMap::new();
+        let mut pending = vec![];
+        let mut states = BitSet::new_with_size(l);
+        states.insert(INITIAL_STATE);
+        pending.push(states);
+        while let Some(states) = pending.pop() {
+            let mut ranges: Vec<RangeInclusive<u8>> = vec![];
+            let mut last_states: Vec<Option<BitSet>> = vec![];
+            let mut states_b = BitSet::new_with_size(l);
+            let mut symbol = 0;
+            loop {
+                let (next_states, max) = self.explore_transitions(states.clone(), states_b, symbol);
+                let mut new = true;
+                if ranges.last().is_some()
+                    && let Some(next) = last_states.last()
+                    && *next == next_states
+                {
+                    *ranges.last_mut().unwrap() = *ranges.last().unwrap().start()..=max;
+                    new = false;
+                }
+                if new {
+                    last_states.push(next_states.clone());
+                    ranges.push(symbol..=max);
+                    match next_states {
+                        Some(next) if !map.contains_key(&next) && !next.clone().is_empty() => {
+                            pending.push(next.clone());
+                        }
+                        _ => {}
+                    }
+                    states_b = BitSet::new_with_size(l);
+                } else {
+                    states_b = next_states.unwrap_or_else(|| BitSet::new_with_size(l));
+                }
+                if max == 255 {
+                    break;
+                }
+                symbol = max + 1;
+            }
+            map.insert(states.clone(), (ranges, last_states));
+        }
+        map
     }
 }
 
