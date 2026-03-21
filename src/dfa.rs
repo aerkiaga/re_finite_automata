@@ -172,8 +172,12 @@ impl Dfa {
         self
     }
 
-    fn apply_nfa(nfa: &Nfa, mut states_a: BitSet, symbol: u8) -> Option<BitSet> {
-        let mut states_b = states_a.clone();
+    fn apply_nfa(
+        nfa: &Nfa,
+        mut states_a: BitSet,
+        mut states_b: BitSet,
+        symbol: u8,
+    ) -> Option<BitSet> {
         states_b.drain();
         while let Some(state) = states_a.iter_next_remove() {
             let new_states = nfa.apply(state, symbol);
@@ -192,7 +196,9 @@ impl Dfa {
         Some(states_b)
     }
 
-    pub fn from_nfa(nfa: Nfa) -> Self {
+    fn from_nfa_compute_map(
+        nfa: Nfa,
+    ) -> HashMap<BitSet, (Vec<RangeInclusive<u8>>, Vec<Option<BitSet>>)> {
         let l = nfa.transitions.len() as u16;
         let mut map = HashMap::new();
         let mut pending = vec![];
@@ -202,8 +208,9 @@ impl Dfa {
         while let Some(states) = pending.pop() {
             let mut ranges: Vec<RangeInclusive<u8>> = vec![];
             let mut last_states: Vec<Option<BitSet>> = vec![];
+            let mut states_b = BitSet::new_with_size(l);
             for symbol in 0..=255 {
-                let next_states = Self::apply_nfa(&nfa, states.clone(), symbol);
+                let next_states = Self::apply_nfa(&nfa, states.clone(), states_b, symbol);
                 let mut new = true;
                 if ranges.last().is_some()
                     && let Some(next) = last_states.last()
@@ -221,10 +228,19 @@ impl Dfa {
                         }
                         _ => {}
                     }
+                    states_b = BitSet::new_with_size(l);
+                } else {
+                    states_b = next_states.unwrap_or_else(|| BitSet::new_with_size(l));
                 }
             }
             map.insert(states.clone(), (ranges, last_states));
         }
+        map
+    }
+
+    pub fn from_nfa(nfa: Nfa) -> Self {
+        let l = nfa.transitions.len() as u16;
+        let map = Self::from_nfa_compute_map(nfa);
         let mut starting = HashMap::new();
         let mut cur_state = 0;
         let mut states = BitSet::new_with_size(l);
