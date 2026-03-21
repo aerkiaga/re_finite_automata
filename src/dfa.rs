@@ -34,7 +34,7 @@ pub struct Dfa {
     pub(crate) transitions: Vec<Transition>,
 }
 
-type MapItem = (Vec<RangeInclusive<u8>>, Vec<Option<BitSet>>);
+type SwitchTable<T> = (Vec<RangeInclusive<u8>>, Vec<T>);
 
 impl Dfa {
     /// Returns the number of states.
@@ -211,7 +211,7 @@ impl Dfa {
     }
 
     // TODO: move to module nfa
-    fn from_nfa_compute_map(nfa: Nfa) -> HashMap<BitSet, MapItem> {
+    fn from_nfa_compute_map(nfa: Nfa) -> HashMap<BitSet, SwitchTable<Option<BitSet>>> {
         let l = nfa.transitions.len() as u16;
         let mut map = HashMap::new();
         let mut pending = vec![];
@@ -258,26 +258,15 @@ impl Dfa {
 
     fn from_nfa_build_transitions(
         trans: &mut [Option<Transition>],
-        k: BitSet,
-        r: MapItem,
-        starting: &HashMap<BitSet, usize>,
+        start: u16,
+        r: SwitchTable<u16>,
     ) {
-        let mut s = starting[&k];
+        let mut s = start;
         // TODO: handle more gracefully
         for n in 0..std::cmp::max(r.0.len() - 1, 1) {
             let range = &r.0[n];
-            let inside_states = &r.1[n];
-            let inside = match inside_states {
-                Some(states) => {
-                    if states.clone().is_empty() {
-                        REJECTING_STATE
-                    } else {
-                        starting[states] as u16
-                    }
-                }
-                None => ACCEPTING_STATE,
-            };
-            let outside = (s + 1) as u16;
+            let inside = r.1[n];
+            let outside = s + 1;
             let t = Transition {
                 min: *range.start(),
                 max: *range.end(),
@@ -285,28 +274,24 @@ impl Dfa {
                 outside,
                 consume: false,
             };
-            trans[s] = Some(t);
-            s = outside as usize;
+            trans[s as usize] = Some(t);
+            s = outside;
         }
         if r.0.len() > 1 {
-            let inside_states = &r.1.last().unwrap();
-            trans[s - 1].as_mut().unwrap().outside = match inside_states {
-                Some(states) => {
-                    if states.clone().is_empty() {
-                        REJECTING_STATE
-                    } else {
-                        starting[states] as u16
-                    }
-                }
+            let inside = &r.1.last();
+            trans[(s - 1) as usize].as_mut().unwrap().outside = match inside {
+                Some(state) => **state,
                 None => ACCEPTING_STATE,
             };
             if r.0.len() == 3
-                && trans[s - 2].as_ref().unwrap().inside == trans[s - 1].as_ref().unwrap().outside
+                && trans[(s - 2) as usize].as_ref().unwrap().inside
+                    == trans[(s - 1) as usize].as_ref().unwrap().outside
             {
-                *trans[s - 2].as_mut().unwrap() = trans[s - 1].as_ref().unwrap().clone();
+                *trans[(s - 2) as usize].as_mut().unwrap() =
+                    trans[(s - 1) as usize].as_ref().unwrap().clone();
             }
         }
-        trans[starting[&k]].as_mut().unwrap().consume = true;
+        trans[start as usize].as_mut().unwrap().consume = true;
     }
 
     /// Constructs a DFA from a NFA, using the [powerset construction](https://en.wikipedia.org/wiki/Powerset_construction).
@@ -327,20 +312,35 @@ impl Dfa {
         let mut starting = HashMap::new();
         let mut cur_state = 0;
         let mut states = BitSet::new_with_size(l);
+        starting.insert(states.clone(), REJECTING_STATE);
         states.insert(INITIAL_STATE);
         starting.insert(states.clone(), cur_state);
-        cur_state += std::cmp::max(map[&states].0.len() - 1, 1);
+        cur_state += std::cmp::max(map[&states].0.len() - 1, 1) as u16;
         // Associate each state set to a state number
         for (k, _) in map.iter() {
             if !starting.contains_key(k) {
                 starting.insert(k.clone(), cur_state);
-                cur_state += std::cmp::max(map[k].0.len() - 1, 1);
+                cur_state += std::cmp::max(map[k].0.len() - 1, 1) as u16;
             }
+        }
+        // Apply new states
+        let mut map2 = HashMap::new();
+        for (k, r) in map.into_iter() {
+            let r2 = (
+                r.0,
+                r.1.into_iter()
+                    .map(|x| match x {
+                        Some(x) => starting[&x],
+                        None => ACCEPTING_STATE,
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            map2.insert(k, r2);
         }
         let mut trans: Vec<_> = (0..cur_state).map(|_| None).collect();
         // Build transitions
-        for (k, r) in map.into_iter() {
-            Self::from_nfa_build_transitions(&mut trans, k, r, &starting);
+        for (k, r) in map2.into_iter() {
+            Self::from_nfa_build_transitions(&mut trans, starting[&k], r);
         }
         Dfa {
             transitions: trans.into_iter().map(|x| x.unwrap()).collect(),
