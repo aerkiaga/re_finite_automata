@@ -511,3 +511,39 @@ fn dfa_nfa_add_test() {
     assert!(!dfa.run(&mut [4, 5].into_iter()));
     assert!(!dfa.run(&mut [6, 6].into_iter()));
 }
+
+#[test]
+fn dfa_nfa_not_test() {
+    let nfa1 = Nfa::from_range(4..=5);
+    let nfa2 = Nfa::from_range(6..=6);
+    let nfa = !(nfa1 + nfa2);
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(!dfa.run(&mut [4, 6].into_iter()));
+    assert!(dfa.run(&mut [4, 5].into_iter()));
+    assert!(dfa.run(&mut [6, 6].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_or_test() {
+    let nfa1 = Nfa::from_range(4..=5);
+    let nfa2 = Nfa::from_range(6..=6);
+    let nfa = nfa1 | nfa2;
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(dfa.run(&mut [4].into_iter()));
+    assert!(dfa.run(&mut [6].into_iter()));
+    assert!(!dfa.run(&mut [7].into_iter()));
+}
+
+#[test]
+fn dfa_nfa_compound_test() {
+    let nfa0 = Nfa::from_range(0..=0);
+    let nfa1 = Nfa::from_range(1..=1);
+    let nfa = ((nfa0.clone() | nfa1.clone()) + nfa0.clone() + nfa1.clone()) | (nfa0 + nfa1);
+    let dfa = Dfa::from_nfa(nfa);
+    assert!(dfa.run(&mut [0, 0, 1].into_iter()));
+    assert!(dfa.run(&mut [0, 1].into_iter()));
+    assert!(dfa.run(&mut [1, 0, 1].into_iter()));
+    assert!(!dfa.run(&mut [1, 0, 0].into_iter()));
+    assert!(dfa.run(&mut [0, 1, 0].into_iter()));
+    assert!(!dfa.run(&mut [1, 0].into_iter()));
+}
