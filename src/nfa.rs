@@ -302,8 +302,8 @@ impl Nfa {
             states: vec![2, 1, ACCEPTING_STATE],
         };
         self.rebase_transition_states(1);
-        self.rebase_states_array(3);
         self.replace_state(ACCEPTING_STATE, 0);
+        self.rebase_states_array(3);
         r.transitions.append(&mut self.transitions);
         r.states.append(&mut self.states);
         r
@@ -322,8 +322,8 @@ impl Nfa {
             states: vec![2, ACCEPTING_STATE, 1],
         };
         self.rebase_transition_states(1);
-        self.rebase_states_array(3);
         self.replace_state(ACCEPTING_STATE, 0);
+        self.rebase_states_array(3);
         r.transitions.append(&mut self.transitions);
         r.states.append(&mut self.states);
         r
