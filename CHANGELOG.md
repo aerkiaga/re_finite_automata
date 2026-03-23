@@ -5,12 +5,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-23
+
 ### Added
 
 - Conversion of NFAs into DFAs and vice versa via `Dfa::from_nfa` and `Nfa::from_dfa`.
 - Dependency on crate `smallvec`.
 - `from_ranges` for creating `Dfa` and `Nfa` objects.
 - Several new tests and benchmarks.
+
+### Fixed
+
+- Out-of-bounds access when creating complex FAs using `repeat_` methods.
 
 ## [0.2.0] - 2026-03-20
 

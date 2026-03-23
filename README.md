@@ -12,7 +12,6 @@ with a focus on regex matches on byte arrays.
 
 ## ToDo
 
-- More primitive operators.
 - DFA optimization.
 
 ## Testing
